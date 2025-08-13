@@ -10,7 +10,7 @@ import platform
 class StorageManager:
     def __init__(self, root):
         self.root = root
-        self.root.title("Enterprise Storage Manager v2.1")
+        self.root.title("Helium v2.1")
         self.root.geometry("1200x800")
         self.root.configure(bg='#2b2b2b')
         
