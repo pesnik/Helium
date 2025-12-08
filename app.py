@@ -29,9 +29,14 @@ class StorageManager:
         self.navigation_history = ["D:\\Laboratory"]
         self.history_index = 0
         self.max_history = 50
-        
+
         # Data storage
         self.folder_data = []
+
+        # Scan cache for performance optimization
+        self.scan_cache = {}  # path -> {folders: [], timestamp: float, total_size: int, subdirs_count: int}
+        self.cache_ttl = 3600  # Cache validity: 1 hour (in seconds)
+        self.cache_enabled = True  # Toggle for cache usage
         
         self.create_widgets()
         self.center_window()
@@ -129,20 +134,28 @@ class StorageManager:
         ttk.Button(action_frame, text="🔍 Scan", 
                   command=self.start_scan, width=8).pack(side=tk.LEFT, padx=(0, 2))
         
-        ttk.Button(action_frame, text="🔄 Refresh", 
+        ttk.Button(action_frame, text="🔄 Refresh",
                   command=self.refresh_scan, width=8).pack(side=tk.LEFT, padx=2)
-        
-        ttk.Button(action_frame, text="📁 Explorer", 
+
+        ttk.Button(action_frame, text="🧹 Clear Cache",
+                  command=self.clear_cache, width=12).pack(side=tk.LEFT, padx=2)
+
+        ttk.Button(action_frame, text="📁 Explorer",
                   command=self.open_in_explorer, width=10).pack(side=tk.LEFT, padx=2)
-        
-        ttk.Button(action_frame, text="📊 Export", 
+
+        ttk.Button(action_frame, text="📊 Export",
                   command=self.export_report, width=8).pack(side=tk.LEFT, padx=2)
         
         # Right side info
         info_frame = ttk.Frame(toolbar)
         info_frame.pack(side=tk.RIGHT)
-        
-        ttk.Label(info_frame, textvariable=self.total_size, 
+
+        # Cache info
+        self.cache_info = tk.StringVar(value="Cache: 0")
+        ttk.Label(info_frame, textvariable=self.cache_info,
+                 font=('Segoe UI', 9), foreground='#888888').pack(side=tk.RIGHT, padx=(0, 15))
+
+        ttk.Label(info_frame, textvariable=self.total_size,
                  font=('Segoe UI', 10, 'bold')).pack(side=tk.RIGHT)
         
     def create_path_frame(self, parent):
@@ -407,25 +420,56 @@ class StorageManager:
         current = Path(self.current_path.get())
         self.up_btn.configure(state='normal' if current.parent != current else 'disabled')
             
-    def start_scan(self):
+    def is_cache_valid(self, path):
+        """Check if cache exists and is still valid for given path"""
+        if path not in self.scan_cache:
+            return False
+
+        cache_entry = self.scan_cache[path]
+        cache_age = time.time() - cache_entry['timestamp']
+
+        return cache_age < self.cache_ttl
+
+    def load_from_cache(self, path):
+        """Load scan results from cache"""
+        cache_entry = self.scan_cache[path]
+        self.folder_data = cache_entry['folders']
+
+        # Update UI
+        self.clear_tree()
+        self.populate_tree()
+
+        total_gb = round(cache_entry['total_size'] / (1024**3), 2)
+        self.total_size.set(f"Total: {total_gb} GB")
+
+        cache_age_minutes = int((time.time() - cache_entry['timestamp']) / 60)
+        self.status_text.set(f"✓ Loaded from cache - {len(self.folder_data)} folders (cached {cache_age_minutes}m ago)")
+        self.update_cache_info()
+
+    def start_scan(self, force_refresh=False):
         """Start directory scan in separate thread"""
         if self.scanning:
             messagebox.showinfo("Scan in Progress", "A scan is already in progress. Please wait.")
             return
-            
+
         path = self.current_path.get()
         if not os.path.exists(path):
             messagebox.showerror("Error", "Directory does not exist!")
             return
-        
+
         # Update navigation buttons
         self.update_navigation_buttons()
-            
+
+        # Check cache first (unless force refresh)
+        if not force_refresh and self.cache_enabled and self.is_cache_valid(path):
+            self.load_from_cache(path)
+            return
+
         self.scanning = True
         self.scan_thread = threading.Thread(target=self.scan_directory, args=(path,))
         self.scan_thread.daemon = True
         self.scan_thread.start()
-        
+
     def scan_directory(self, path):
         """Scan directory and populate tree"""
         try:
@@ -481,13 +525,23 @@ class StorageManager:
             
             # Sort by size (descending)
             self.folder_data.sort(key=lambda x: x['size_bytes'], reverse=True)
-            
+
+            # Store in cache
+            self.scan_cache[path] = {
+                'folders': self.folder_data.copy(),
+                'timestamp': time.time(),
+                'total_size': total_size_bytes,
+                'subdirs_count': len(self.folder_data)
+            }
+
             # Update UI
             total_gb = round(total_size_bytes / (1024**3), 2)
             self.root.after(0, lambda: self.total_size.set(f"Total: {total_gb} GB"))
             self.root.after(0, self.populate_tree)
-            self.root.after(0, lambda: self.status_text.set(f"Scan complete - {len(self.folder_data)} folders found"))
-            
+            cache_info = f" [Cache: {len(self.scan_cache)} locations]"
+            self.root.after(0, lambda: self.status_text.set(f"✓ Scan complete - {len(self.folder_data)} folders found{cache_info}"))
+            self.root.after(0, self.update_cache_info)
+
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror("Error", f"Scan failed: {str(e)}"))
         finally:
@@ -532,9 +586,31 @@ class StorageManager:
                                  folder['files'], folder['modified'], folder['path']))
     
     def refresh_scan(self):
-        """Refresh the current scan"""
+        """Refresh the current scan (force re-scan, ignoring cache)"""
         if not self.scanning:
-            self.start_scan()
+            path = self.current_path.get()
+            # Remove this path from cache to force fresh scan
+            if path in self.scan_cache:
+                del self.scan_cache[path]
+            self.start_scan(force_refresh=True)
+
+    def clear_cache(self):
+        """Clear the entire scan cache"""
+        cache_count = len(self.scan_cache)
+        self.scan_cache.clear()
+        messagebox.showinfo("Cache Cleared", f"Cleared cache containing {cache_count} scanned locations.")
+        self.status_text.set("Cache cleared")
+        self.update_cache_info()
+
+    def update_cache_info(self):
+        """Update cache information display"""
+        cache_count = len(self.scan_cache)
+        if cache_count == 0:
+            self.cache_info.set("Cache: Empty")
+        else:
+            # Calculate total cached data size
+            total_cached_gb = sum(entry['total_size'] for entry in self.scan_cache.values()) / (1024**3)
+            self.cache_info.set(f"💾 Cache: {cache_count} locations ({total_cached_gb:.1f} GB)")
     
     def on_item_select(self, event):
         """Handle item selection"""
