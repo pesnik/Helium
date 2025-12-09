@@ -6,6 +6,9 @@ import time
 from pathlib import Path
 import subprocess
 import platform
+import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Tuple
 
 class StorageManager:
     def __init__(self, root):
@@ -24,7 +27,8 @@ class StorageManager:
         self.total_size = tk.StringVar(value="Total: 0 GB")
         self.scanning = False
         self.scan_thread = None
-        
+        self.cancel_scan = False
+
         # Navigation history
         self.navigation_history = ["D:\\Laboratory"]
         self.history_index = 0
@@ -33,10 +37,22 @@ class StorageManager:
         # Data storage
         self.folder_data = []
 
-        # Scan cache for performance optimization
+        # Detailed progress tracking
+        self.current_scan_folder = tk.StringVar(value="")
+        self.scan_stats = tk.StringVar(value="")
+        self.show_detailed_progress = tk.BooleanVar(value=True)
+
+        # Persistent cache configuration
+        self.cache_dir = Path.home() / ".helium_cache"
+        self.cache_file = self.cache_dir / "scan_cache.json"
         self.scan_cache = {}  # path -> {folders: [], timestamp: float, total_size: int, subdirs_count: int}
         self.cache_ttl = 3600  # Cache validity: 1 hour (in seconds)
         self.cache_enabled = True  # Toggle for cache usage
+        self.max_workers = 4  # Number of parallel threads for scanning
+
+        # Load cache and settings
+        self.load_settings()
+        self.load_cache_from_disk()
         
         self.create_widgets()
         self.center_window()
@@ -130,15 +146,22 @@ class StorageManager:
         # Action buttons (middle)
         action_frame = ttk.Frame(toolbar)
         action_frame.pack(side=tk.LEFT, padx=10)
-        
-        ttk.Button(action_frame, text="🔍 Scan", 
+
+        ttk.Button(action_frame, text="🔍 Scan",
                   command=self.start_scan, width=8).pack(side=tk.LEFT, padx=(0, 2))
-        
+
+        self.cancel_btn = ttk.Button(action_frame, text="⏹ Cancel",
+                  command=self.cancel_scan_action, width=8, state='disabled')
+        self.cancel_btn.pack(side=tk.LEFT, padx=2)
+
         ttk.Button(action_frame, text="🔄 Refresh",
                   command=self.refresh_scan, width=8).pack(side=tk.LEFT, padx=2)
 
         ttk.Button(action_frame, text="🧹 Clear Cache",
                   command=self.clear_cache, width=12).pack(side=tk.LEFT, padx=2)
+
+        ttk.Button(action_frame, text="⚙️ Settings",
+                  command=self.show_settings, width=10).pack(side=tk.LEFT, padx=2)
 
         ttk.Button(action_frame, text="📁 Explorer",
                   command=self.open_in_explorer, width=10).pack(side=tk.LEFT, padx=2)
@@ -296,17 +319,48 @@ class StorageManager:
                   command=self.show_properties, width=15).pack(pady=2, fill=tk.X)
         
     def create_status_bar(self, parent):
-        """Create status bar"""
+        """Create status bar with detailed progress panel"""
         status_frame = ttk.Frame(parent)
         status_frame.pack(fill=tk.X, side=tk.BOTTOM)
-        
+
+        # Main status bar
+        main_status = ttk.Frame(status_frame)
+        main_status.pack(fill=tk.X)
+
         # Progress bar
-        self.progress = ttk.Progressbar(status_frame, variable=self.scan_progress, 
+        self.progress = ttk.Progressbar(main_status, variable=self.scan_progress,
                                        mode='determinate', length=300)
         self.progress.pack(side=tk.LEFT, padx=(0, 10))
-        
+
         # Status label
-        ttk.Label(status_frame, textvariable=self.status_text).pack(side=tk.LEFT)
+        ttk.Label(main_status, textvariable=self.status_text).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # Toggle button for detailed progress
+        self.detail_toggle_btn = ttk.Button(main_status, text="▼ Show Details",
+                                           command=self.toggle_detailed_progress, width=15)
+        self.detail_toggle_btn.pack(side=tk.RIGHT, padx=5)
+
+        # Detailed progress panel (collapsible)
+        self.detail_panel = ttk.Frame(status_frame, relief='sunken', borderwidth=1)
+
+        detail_content = ttk.Frame(self.detail_panel, padding="5")
+        detail_content.pack(fill=tk.BOTH, expand=True)
+
+        # Current folder being scanned
+        folder_frame = ttk.Frame(detail_content)
+        folder_frame.pack(fill=tk.X, pady=(0, 5))
+        ttk.Label(folder_frame, text="Scanning:", font=('Segoe UI', 9, 'bold')).pack(side=tk.LEFT)
+        ttk.Label(folder_frame, textvariable=self.current_scan_folder,
+                 font=('Segoe UI', 9), foreground='#0078d4').pack(side=tk.LEFT, padx=(5, 0))
+
+        # Statistics
+        ttk.Label(detail_content, textvariable=self.scan_stats,
+                 font=('Consolas', 8), foreground='#888888').pack(fill=tk.X)
+
+        # Show/hide based on initial state
+        if self.show_detailed_progress.get():
+            self.detail_panel.pack(fill=tk.X, pady=(5, 0))
+            self.detail_toggle_btn.config(text="▲ Hide Details")
         
     def browse_directory(self):
         """Open directory browser"""
@@ -471,107 +525,172 @@ class StorageManager:
         self.scan_thread.start()
 
     def scan_directory(self, path):
-        """Scan directory and populate tree"""
+        """Scan directory with parallel processing for better performance"""
         try:
-            self.status_text.set("Scanning directory...")
+            self.status_text.set("Initializing scan...")
             self.scan_progress.set(0)
-            
+            self.cancel_scan = False
+
+            # Enable cancel button
+            self.root.after(0, lambda: self.cancel_btn.config(state='normal'))
+
             # Clear existing data
             self.root.after(0, self.clear_tree)
-            
+
             # Get subdirectories
             subdirs = [d for d in Path(path).iterdir() if d.is_dir()]
             total_dirs = len(subdirs)
-            
+
             if total_dirs == 0:
                 self.root.after(0, lambda: self.status_text.set("No subdirectories found"))
                 self.scanning = False
+                self.root.after(0, lambda: self.cancel_btn.config(state='disabled'))
                 return
-            
+
             self.folder_data = []
             total_size_bytes = 0
-            
-            for i, subdir in enumerate(subdirs):
-                if not self.scanning:  # Check if scan was cancelled
-                    break
-                    
-                try:
-                    # Calculate folder size
-                    size_bytes = self.get_folder_size(subdir)
-                    file_count = self.get_file_count(subdir)
-                    modified_time = subdir.stat().st_mtime
-                    
-                    folder_info = {
-                        'name': subdir.name,
-                        'size_gb': round(size_bytes / (1024**3), 3),
-                        'size_mb': round(size_bytes / (1024**2), 1),
-                        'files': file_count,
-                        'modified': time.strftime('%Y-%m-%d %H:%M', time.localtime(modified_time)),
-                        'path': str(subdir),
-                        'size_bytes': size_bytes
-                    }
-                    
-                    self.folder_data.append(folder_info)
-                    total_size_bytes += size_bytes
-                    
+            completed = 0
+            start_time = time.time()
+
+            self.root.after(0, lambda: self.status_text.set(f"Scanning {total_dirs} folders..."))
+
+            # Parallel scanning with ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                # Submit all folder scan tasks
+                future_to_folder = {
+                    executor.submit(self.scan_single_folder, subdir, i, total_dirs): subdir
+                    for i, subdir in enumerate(subdirs)
+                }
+
+                # Process completed scans as they finish
+                for future in as_completed(future_to_folder):
+                    if self.cancel_scan:
+                        # Cancel remaining tasks
+                        for f in future_to_folder:
+                            f.cancel()
+                        self.root.after(0, lambda: self.status_text.set("⏹ Scan cancelled"))
+                        break
+
+                    folder_info = future.result()
+                    if folder_info:
+                        self.folder_data.append(folder_info)
+                        total_size_bytes += folder_info['size_bytes']
+
+                    completed += 1
+
                     # Update progress
-                    progress = ((i + 1) / total_dirs) * 100
+                    progress = (completed / total_dirs) * 100
                     self.root.after(0, lambda p=progress: self.scan_progress.set(p))
-                    self.root.after(0, lambda: self.status_text.set(f"Scanning... {i+1}/{total_dirs}"))
-                    
-                except (PermissionError, OSError) as e:
-                    # Skip inaccessible folders
-                    continue
-            
-            # Sort by size (descending)
-            self.folder_data.sort(key=lambda x: x['size_bytes'], reverse=True)
 
-            # Store in cache
-            self.scan_cache[path] = {
-                'folders': self.folder_data.copy(),
-                'timestamp': time.time(),
-                'total_size': total_size_bytes,
-                'subdirs_count': len(self.folder_data)
-            }
+                    # Calculate stats
+                    elapsed = time.time() - start_time
+                    rate = completed / elapsed if elapsed > 0 else 0
+                    eta = (total_dirs - completed) / rate if rate > 0 else 0
 
-            # Update UI
-            total_gb = round(total_size_bytes / (1024**3), 2)
-            self.root.after(0, lambda: self.total_size.set(f"Total: {total_gb} GB"))
-            self.root.after(0, self.populate_tree)
-            cache_info = f" [Cache: {len(self.scan_cache)} locations]"
-            self.root.after(0, lambda: self.status_text.set(f"✓ Scan complete - {len(self.folder_data)} folders found{cache_info}"))
-            self.root.after(0, self.update_cache_info)
+                    stats = (f"Progress: {completed}/{total_dirs} | "
+                            f"Speed: {rate:.1f} folders/sec | "
+                            f"ETA: {int(eta)}s | "
+                            f"Total: {total_size_bytes/(1024**3):.2f} GB")
+
+                    self.root.after(0, lambda s=stats: self.scan_stats.set(s))
+                    self.root.after(0, lambda c=completed, t=total_dirs:
+                                   self.status_text.set(f"Scanning... {c}/{t}"))
+
+            if not self.cancel_scan:
+                # Sort by size (descending)
+                self.folder_data.sort(key=lambda x: x['size_bytes'], reverse=True)
+
+                # Store in cache
+                self.scan_cache[path] = {
+                    'folders': self.folder_data.copy(),
+                    'timestamp': time.time(),
+                    'total_size': total_size_bytes,
+                    'subdirs_count': len(self.folder_data)
+                }
+
+                # Save cache to disk
+                self.save_cache_to_disk()
+
+                # Update UI
+                total_gb = round(total_size_bytes / (1024**3), 2)
+                elapsed_time = time.time() - start_time
+                self.root.after(0, lambda: self.total_size.set(f"Total: {total_gb} GB"))
+                self.root.after(0, self.populate_tree)
+                self.root.after(0, lambda: self.status_text.set(
+                    f"✓ Scan complete - {len(self.folder_data)} folders in {elapsed_time:.1f}s"))
+                self.root.after(0, self.update_cache_info)
+                self.root.after(0, lambda: self.scan_stats.set(
+                    f"Completed: {len(self.folder_data)} folders | Total: {total_gb} GB | Time: {elapsed_time:.1f}s"))
 
         except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("Error", f"Scan failed: {str(e)}"))
+            self.root.after(0, lambda e=e: messagebox.showerror("Error", f"Scan failed: {str(e)}"))
         finally:
             self.scanning = False
+            self.cancel_scan = False
             self.root.after(0, lambda: self.scan_progress.set(0))
+            self.root.after(0, lambda: self.cancel_btn.config(state='disabled'))
+            self.root.after(0, lambda: self.current_scan_folder.set(""))
     
-    def get_folder_size(self, folder_path):
-        """Calculate total size of folder"""
+    def get_folder_size_and_count(self, folder_path: Path) -> Tuple[int, int]:
+        """
+        Optimized: Calculate total size and file count in single pass using os.scandir
+        Returns: (total_size_bytes, file_count)
+        """
         total_size = 0
+        file_count = 0
+
         try:
-            for entry in folder_path.rglob('*'):
-                if entry.is_file():
-                    try:
-                        total_size += entry.stat().st_size
-                    except (OSError, PermissionError):
-                        continue
+            # Use os.scandir for better performance than rglob
+            def scan_recursive(path):
+                nonlocal total_size, file_count
+                try:
+                    with os.scandir(path) as entries:
+                        for entry in entries:
+                            try:
+                                if entry.is_file(follow_symlinks=False):
+                                    total_size += entry.stat(follow_symlinks=False).st_size
+                                    file_count += 1
+                                elif entry.is_dir(follow_symlinks=False):
+                                    scan_recursive(entry.path)
+                            except (OSError, PermissionError):
+                                continue
+                except (OSError, PermissionError):
+                    pass
+
+            scan_recursive(str(folder_path))
         except (OSError, PermissionError):
             pass
-        return total_size
-    
-    def get_file_count(self, folder_path):
-        """Count files in folder"""
-        count = 0
+
+        return total_size, file_count
+
+    def scan_single_folder(self, subdir: Path, index: int, total: int) -> Dict:
+        """
+        Scan a single folder and return its info
+        This is designed to be called in parallel
+        """
         try:
-            for entry in folder_path.rglob('*'):
-                if entry.is_file():
-                    count += 1
-        except (OSError, PermissionError):
-            pass
-        return count
+            # Update progress in UI
+            folder_name = subdir.name
+            self.root.after(0, lambda: self.current_scan_folder.set(f"{folder_name} ({index+1}/{total})"))
+
+            # Calculate size and count in single pass
+            size_bytes, file_count = self.get_folder_size_and_count(subdir)
+            modified_time = subdir.stat().st_mtime
+
+            folder_info = {
+                'name': subdir.name,
+                'size_gb': round(size_bytes / (1024**3), 3),
+                'size_mb': round(size_bytes / (1024**2), 1),
+                'files': file_count,
+                'modified': time.strftime('%Y-%m-%d %H:%M', time.localtime(modified_time)),
+                'path': str(subdir),
+                'size_bytes': size_bytes
+            }
+
+            return folder_info
+
+        except (PermissionError, OSError) as e:
+            return None
     
     def clear_tree(self):
         """Clear tree view"""
@@ -734,20 +853,20 @@ Path Components:
         if not self.folder_data:
             messagebox.showwarning("Warning", "No data to export. Please scan a directory first.")
             return
-            
+
         filename = filedialog.asksaveasfilename(
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
             title="Save Storage Report"
         )
-        
+
         if filename:
             try:
                 import csv
                 with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
                     fieldnames = ['Folder Name', 'Size (GB)', 'Size (MB)', 'Files', 'Modified', 'Full Path']
                     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                    
+
                     writer.writeheader()
                     for folder in self.folder_data:
                         writer.writerow({
@@ -758,10 +877,180 @@ Path Components:
                             'Modified': folder['modified'],
                             'Full Path': folder['path']
                         })
-                
+
                 messagebox.showinfo("Success", f"Report exported to: {filename}")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to export report: {str(e)}")
+
+    def load_settings(self):
+        """Load application settings from disk"""
+        settings_file = self.cache_dir / "settings.json"
+        try:
+            if settings_file.exists():
+                with open(settings_file, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
+                    self.cache_dir = Path(settings.get('cache_dir', self.cache_dir))
+                    self.cache_file = self.cache_dir / "scan_cache.json"
+                    self.cache_ttl = settings.get('cache_ttl', 3600)
+                    self.cache_enabled = settings.get('cache_enabled', True)
+                    self.max_workers = settings.get('max_workers', 4)
+        except Exception:
+            pass  # Use defaults if loading fails
+
+    def save_settings(self):
+        """Save application settings to disk"""
+        settings_file = self.cache_dir / "settings.json"
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            settings = {
+                'cache_dir': str(self.cache_dir),
+                'cache_ttl': self.cache_ttl,
+                'cache_enabled': self.cache_enabled,
+                'max_workers': self.max_workers
+            }
+            with open(settings_file, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, indent=2)
+        except Exception as e:
+            print(f"Failed to save settings: {e}")
+
+    def load_cache_from_disk(self):
+        """Load scan cache from persistent storage"""
+        try:
+            if self.cache_file.exists():
+                with open(self.cache_file, 'r', encoding='utf-8') as f:
+                    cache_data = json.load(f)
+                    # Convert back to proper format
+                    for path, data in cache_data.items():
+                        self.scan_cache[path] = data
+                self.update_cache_info()
+        except Exception:
+            pass  # Start with empty cache if loading fails
+
+    def save_cache_to_disk(self):
+        """Save scan cache to persistent storage"""
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            with open(self.cache_file, 'w', encoding='utf-8') as f:
+                json.dump(self.scan_cache, f, indent=2)
+        except Exception as e:
+            print(f"Failed to save cache: {e}")
+
+    def cancel_scan_action(self):
+        """Cancel the current scan operation"""
+        if self.scanning:
+            self.cancel_scan = True
+            self.status_text.set("Cancelling scan...")
+
+    def toggle_detailed_progress(self):
+        """Toggle the detailed progress panel visibility"""
+        if self.show_detailed_progress.get():
+            # Hide details
+            self.detail_panel.pack_forget()
+            self.detail_toggle_btn.config(text="▼ Show Details")
+            self.show_detailed_progress.set(False)
+        else:
+            # Show details
+            self.detail_panel.pack(fill=tk.X, pady=(5, 0))
+            self.detail_toggle_btn.config(text="▲ Hide Details")
+            self.show_detailed_progress.set(True)
+
+    def show_settings(self):
+        """Show settings dialog"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Helium Settings")
+        dialog.geometry("500x400")
+        dialog.configure(bg='#2b2b2b')
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+
+        main_frame = ttk.Frame(dialog, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Title
+        ttk.Label(main_frame, text="Application Settings",
+                 font=('Segoe UI', 14, 'bold')).pack(pady=(0, 20))
+
+        # Cache Directory
+        cache_frame = ttk.LabelFrame(main_frame, text="Cache Settings", padding="10")
+        cache_frame.pack(fill=tk.X, pady=(0, 15))
+
+        ttk.Label(cache_frame, text="Cache Location:").pack(anchor='w')
+        cache_path_frame = ttk.Frame(cache_frame)
+        cache_path_frame.pack(fill=tk.X, pady=(5, 10))
+
+        cache_path_var = tk.StringVar(value=str(self.cache_dir))
+        cache_entry = ttk.Entry(cache_path_frame, textvariable=cache_path_var, width=40)
+        cache_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+
+        def browse_cache_dir():
+            directory = filedialog.askdirectory(initialdir=self.cache_dir)
+            if directory:
+                cache_path_var.set(directory)
+
+        ttk.Button(cache_path_frame, text="Browse...",
+                  command=browse_cache_dir, width=10).pack(side=tk.RIGHT)
+
+        # Cache TTL
+        ttl_frame = ttk.Frame(cache_frame)
+        ttl_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(ttl_frame, text="Cache Validity (minutes):").pack(side=tk.LEFT, padx=(0, 10))
+        ttl_var = tk.IntVar(value=self.cache_ttl // 60)
+        ttl_spinbox = ttk.Spinbox(ttl_frame, from_=1, to=1440, textvariable=ttl_var, width=10)
+        ttl_spinbox.pack(side=tk.LEFT)
+
+        # Cache enabled
+        cache_enabled_var = tk.BooleanVar(value=self.cache_enabled)
+        ttk.Checkbutton(cache_frame, text="Enable cache",
+                       variable=cache_enabled_var).pack(anchor='w')
+
+        # Performance Settings
+        perf_frame = ttk.LabelFrame(main_frame, text="Performance Settings", padding="10")
+        perf_frame.pack(fill=tk.X, pady=(0, 15))
+
+        workers_frame = ttk.Frame(perf_frame)
+        workers_frame.pack(fill=tk.X)
+        ttk.Label(workers_frame, text="Parallel Scan Threads:").pack(side=tk.LEFT, padx=(0, 10))
+        workers_var = tk.IntVar(value=self.max_workers)
+        workers_spinbox = ttk.Spinbox(workers_frame, from_=1, to=16, textvariable=workers_var, width=10)
+        workers_spinbox.pack(side=tk.LEFT)
+        ttk.Label(workers_frame, text="(1-16, recommended: 4-8)",
+                 font=('Segoe UI', 8), foreground='#888888').pack(side=tk.LEFT, padx=(10, 0))
+
+        # Cache Info
+        info_frame = ttk.Frame(main_frame)
+        info_frame.pack(fill=tk.X, pady=(10, 0))
+
+        cache_count = len(self.scan_cache)
+        cache_size_mb = 0
+        if self.cache_file.exists():
+            cache_size_mb = self.cache_file.stat().st_size / (1024 * 1024)
+
+        info_text = f"Current cache: {cache_count} locations, {cache_size_mb:.2f} MB on disk"
+        ttk.Label(info_frame, text=info_text,
+                 font=('Segoe UI', 9), foreground='#888888').pack(anchor='w')
+
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(side=tk.BOTTOM, pady=(20, 0))
+
+        def save_and_close():
+            self.cache_dir = Path(cache_path_var.get())
+            self.cache_file = self.cache_dir / "scan_cache.json"
+            self.cache_ttl = ttl_var.get() * 60
+            self.cache_enabled = cache_enabled_var.get()
+            self.max_workers = workers_var.get()
+            self.save_settings()
+            messagebox.showinfo("Settings Saved", "Settings have been saved successfully!")
+            dialog.destroy()
+
+        ttk.Button(button_frame, text="Save", command=save_and_close, width=12).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy, width=12).pack(side=tk.LEFT, padx=5)
 
 def main():
     root = tk.Tk()
