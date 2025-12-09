@@ -801,11 +801,37 @@ class StorageManager:
             self.tree.delete(item)
     
     def populate_tree(self):
-        """Populate tree with scan results"""
+        """Populate tree with scan results, including virtual files entry if needed"""
+        # Calculate total size of all subfolders
+        subfolders_total = sum(folder['size_bytes'] for folder in self.folder_data)
+
+        # Get total size from cache if available, otherwise use subfolders total
+        path = self.current_path.get()
+        total_size = subfolders_total
+        if path in self.scan_cache:
+            total_size = self.scan_cache[path].get('total_size', subfolders_total)
+
+        # Calculate size of files in root (not in subfolders)
+        files_size = total_size - subfolders_total
+
+        # If there are files in root, add virtual entry at the top
+        if files_size > 0:
+            files_gb = round(files_size / (1024**3), 3)
+            files_mb = round(files_size / (1024**2), 1)
+
+            # Insert virtual entry with special styling
+            self.tree.insert('', 0, text='📄 (Files in this folder)',
+                           values=(files_gb, files_mb, '-', '-', path),
+                           tags=('files_entry',))
+
+        # Insert all actual folders
         for folder in self.folder_data:
             self.tree.insert('', tk.END, text=folder['name'],
-                           values=(folder['size_gb'], folder['size_mb'], 
+                           values=(folder['size_gb'], folder['size_mb'],
                                  folder['files'], folder['modified'], folder['path']))
+
+        # Configure tag for virtual files entry (gray, italic)
+        self.tree.tag_configure('files_entry', foreground='#888888', font=('Segoe UI', 10, 'italic'))
     
     def refresh_scan(self):
         """Refresh the current scan (force re-scan, ignoring cache)"""
