@@ -828,8 +828,9 @@ class StorageManager:
             folder_values = values['values']
             
             if folder_values:
+                path_components = chr(10).join(f"  • {part}" for part in Path(folder_values[4]).parts)
                 details = f"""Selected Folder: {folder_name}
-                
+
 Size: {folder_values[0]} GB ({folder_values[1]} MB)
 Files: {folder_values[2]:,}
 Last Modified: {folder_values[3]}
@@ -841,7 +842,7 @@ Size in bytes: {folder_values[1] * 1024 * 1024:,.0f}
 Average file size: {(folder_values[1] * 1024 * 1024) / max(folder_values[2], 1):,.0f} bytes
 
 Path Components:
-{chr(10).join(f"  • {part}" for part in Path(folder_values[4]).parts)}
+{path_components}
 """
                 self.details_text.delete(1.0, tk.END)
                 self.details_text.insert(1.0, details)
