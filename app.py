@@ -497,7 +497,16 @@ class StorageManager:
         self.total_size.set(f"Total: {total_gb} GB")
 
         cache_age_minutes = int((time.time() - cache_entry['timestamp']) / 60)
-        self.status_text.set(f"✓ Loaded from cache - {len(self.folder_data)} folders (cached {cache_age_minutes}m ago)")
+        if cache_age_minutes < 1:
+            age_str = "just scanned"
+        elif cache_age_minutes < 60:
+            age_str = f"cached {cache_age_minutes}m ago"
+        else:
+            cache_age_hours = cache_age_minutes // 60
+            age_str = f"cached {cache_age_hours}h ago"
+
+        self.status_text.set(f"⚡ Instant load from cache - {len(self.folder_data)} folders ({age_str})")
+        self.scan_stats.set(f"Cache hit! Loaded {len(self.folder_data)} folders instantly | Total: {total_gb} GB")
         self.update_cache_info()
 
     def start_scan(self, force_refresh=False):
@@ -663,18 +672,86 @@ class StorageManager:
 
         return total_size, file_count
 
+    def get_folder_info_with_subdirs(self, folder_path: Path) -> Tuple[int, int, List[Dict]]:
+        """
+        Enhanced: Calculate size, count AND collect info about direct subdirectories
+        This enables instant drill-down by pre-caching nested folder info
+        Returns: (total_size_bytes, file_count, subdirs_info_list)
+        """
+        total_size = 0
+        file_count = 0
+        subdirs_info = []
+
+        try:
+            # First, scan direct subdirectories and collect their info
+            direct_subdirs = []
+            try:
+                with os.scandir(str(folder_path)) as entries:
+                    for entry in entries:
+                        try:
+                            if entry.is_dir(follow_symlinks=False):
+                                direct_subdirs.append(Path(entry.path))
+                        except (OSError, PermissionError):
+                            continue
+            except (OSError, PermissionError):
+                pass
+
+            # Now calculate size for each subdirectory
+            for subdir in direct_subdirs:
+                try:
+                    subdir_size, subdir_files = self.get_folder_size_and_count(subdir)
+                    modified_time = subdir.stat().st_mtime
+
+                    subdir_info = {
+                        'name': subdir.name,
+                        'size_gb': round(subdir_size / (1024**3), 3),
+                        'size_mb': round(subdir_size / (1024**2), 1),
+                        'files': subdir_files,
+                        'modified': time.strftime('%Y-%m-%d %H:%M', time.localtime(modified_time)),
+                        'path': str(subdir),
+                        'size_bytes': subdir_size
+                    }
+
+                    subdirs_info.append(subdir_info)
+                    total_size += subdir_size
+                    file_count += subdir_files
+                except (OSError, PermissionError):
+                    continue
+
+            # Also count files in the root of this folder
+            try:
+                with os.scandir(str(folder_path)) as entries:
+                    for entry in entries:
+                        try:
+                            if entry.is_file(follow_symlinks=False):
+                                total_size += entry.stat(follow_symlinks=False).st_size
+                                file_count += 1
+                        except (OSError, PermissionError):
+                            continue
+            except (OSError, PermissionError):
+                pass
+
+            # Sort subdirs by size
+            subdirs_info.sort(key=lambda x: x['size_bytes'], reverse=True)
+
+        except (OSError, PermissionError):
+            pass
+
+        return total_size, file_count, subdirs_info
+
     def scan_single_folder(self, subdir: Path, index: int, total: int) -> Dict:
         """
         Scan a single folder and return its info
         This is designed to be called in parallel
+        Also caches nested subdirectories for instant drill-down
         """
         try:
             # Update progress in UI
             folder_name = subdir.name
             self.root.after(0, lambda: self.current_scan_folder.set(f"{folder_name} ({index+1}/{total})"))
 
-            # Calculate size and count in single pass
-            size_bytes, file_count = self.get_folder_size_and_count(subdir)
+            # Calculate size and count, AND collect subdirectory info
+            size_bytes, file_count, nested_folders = self.get_folder_info_with_subdirs(subdir)
             modified_time = subdir.stat().st_mtime
 
             folder_info = {
@@ -687,9 +764,19 @@ class StorageManager:
                 'size_bytes': size_bytes
             }
 
+            # Cache the nested subdirectories so drill-down is instant!
+            if nested_folders:
+                subdir_path = str(subdir)
+                self.scan_cache[subdir_path] = {
+                    'folders': nested_folders,
+                    'timestamp': time.time(),
+                    'total_size': size_bytes,
+                    'subdirs_count': len(nested_folders)
+                }
+
             return folder_info
 
-        except (PermissionError, OSError) as e:
+        except (PermissionError, OSError):
             return None
     
     def clear_tree(self):
