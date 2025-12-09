@@ -494,7 +494,15 @@ class StorageManager:
         self.populate_tree()
 
         total_gb = round(cache_entry['total_size'] / (1024**3), 2)
-        self.total_size.set(f"Total: {total_gb} GB")
+        total_mb = round(cache_entry['total_size'] / (1024**2), 2)
+
+        # Display with appropriate unit
+        if total_gb >= 1:
+            size_str = f"{total_gb} GB"
+        else:
+            size_str = f"{total_mb} MB"
+
+        self.total_size.set(f"Total: {size_str}")
 
         cache_age_minutes = int((time.time() - cache_entry['timestamp']) / 60)
         if cache_age_minutes < 1:
@@ -505,8 +513,10 @@ class StorageManager:
             cache_age_hours = cache_age_minutes // 60
             age_str = f"cached {cache_age_hours}h ago"
 
-        self.status_text.set(f"⚡ Instant load from cache - {len(self.folder_data)} folders ({age_str})")
-        self.scan_stats.set(f"Cache hit! Loaded {len(self.folder_data)} folders instantly | Total: {total_gb} GB")
+        # Show subfolder count
+        num_folders = len(self.folder_data)
+        self.status_text.set(f"⚡ Instant load from cache - {num_folders} subfolders ({age_str})")
+        self.scan_stats.set(f"Cache hit! Loaded {num_folders} subfolders instantly | Total: {size_str} | Cached size: {cache_entry['total_size']:,} bytes")
         self.update_cache_info()
 
     def start_scan(self, force_refresh=False):
@@ -643,6 +653,7 @@ class StorageManager:
     def get_folder_size_and_count(self, folder_path: Path) -> Tuple[int, int]:
         """
         Optimized: Calculate total size and file count in single pass using os.scandir
+        Includes hidden files and folders
         Returns: (total_size_bytes, file_count)
         """
         total_size = 0
@@ -650,12 +661,17 @@ class StorageManager:
 
         try:
             # Use os.scandir for better performance than rglob
+            # Note: os.scandir includes hidden files/folders by default
             def scan_recursive(path):
                 nonlocal total_size, file_count
                 try:
                     with os.scandir(path) as entries:
                         for entry in entries:
                             try:
+                                # Skip . and .. but include hidden files (starting with .)
+                                if entry.name in ('.', '..'):
+                                    continue
+
                                 if entry.is_file(follow_symlinks=False):
                                     total_size += entry.stat(follow_symlinks=False).st_size
                                     file_count += 1
@@ -765,14 +781,14 @@ class StorageManager:
             }
 
             # Cache the nested subdirectories so drill-down is instant!
-            if nested_folders:
-                subdir_path = str(subdir)
-                self.scan_cache[subdir_path] = {
-                    'folders': nested_folders,
-                    'timestamp': time.time(),
-                    'total_size': size_bytes,
-                    'subdirs_count': len(nested_folders)
-                }
+            # ALWAYS cache, even if no subfolders (could have files only)
+            subdir_path = str(subdir)
+            self.scan_cache[subdir_path] = {
+                'folders': nested_folders,  # Can be empty list if no subdirs
+                'timestamp': time.time(),
+                'total_size': size_bytes,  # Total size of THIS folder (all files recursively)
+                'subdirs_count': len(nested_folders)
+            }
 
             return folder_info
 
