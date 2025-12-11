@@ -30,9 +30,16 @@ echo.
 
 REM Clean previous build
 echo [3/4] Cleaning previous build files...
-if exist "dist" rmdir /s /q "dist"
-if exist "build" rmdir /s /q "build"
-if exist "*.spec" del /q "*.spec"
+if exist "dist" (
+    echo Removing dist folder...
+    rmdir /s /q "dist" 2>nul
+    timeout /t 1 >nul
+)
+if exist "build" (
+    echo Removing build folder...
+    rmdir /s /q "build" 2>nul
+    timeout /t 1 >nul
+)
 echo Previous build files cleaned.
 echo.
 
