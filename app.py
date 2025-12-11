@@ -21,7 +21,7 @@ class StorageManager:
         self.setup_styles()
         
         # Variables
-        self.current_path = tk.StringVar(value="D:\\Laboratory")
+        self.current_path = tk.StringVar(value="C:\\")
         self.scan_progress = tk.DoubleVar()
         self.status_text = tk.StringVar(value="Ready")
         self.total_size = tk.StringVar(value="Total: 0 GB")
@@ -30,7 +30,7 @@ class StorageManager:
         self.cancel_scan = False
 
         # Navigation history
-        self.navigation_history = ["D:\\Laboratory"]
+        self.navigation_history = ["C:\\"]
         self.history_index = 0
         self.max_history = 50
 
@@ -135,11 +135,11 @@ class StorageManager:
                                      command=self.navigate_forward, width=10, state='disabled')
         self.forward_btn.pack(side=tk.LEFT, padx=2)
         
-        self.up_btn = ttk.Button(nav_frame, text="⬆ Up", 
+        self.up_btn = ttk.Button(nav_frame, text="^ Up",
                                 command=self.navigate_up, width=6)
         self.up_btn.pack(side=tk.LEFT, padx=2)
-        
-        self.home_btn = ttk.Button(nav_frame, text="🏠 Home", 
+
+        self.home_btn = ttk.Button(nav_frame, text="Home",
                                   command=self.navigate_home, width=8)
         self.home_btn.pack(side=tk.LEFT, padx=2)
         
@@ -147,26 +147,26 @@ class StorageManager:
         action_frame = ttk.Frame(toolbar)
         action_frame.pack(side=tk.LEFT, padx=10)
 
-        ttk.Button(action_frame, text="🔍 Scan",
+        ttk.Button(action_frame, text="Scan",
                   command=self.start_scan, width=8).pack(side=tk.LEFT, padx=(0, 2))
 
-        self.cancel_btn = ttk.Button(action_frame, text="⏹ Cancel",
+        self.cancel_btn = ttk.Button(action_frame, text="Cancel",
                   command=self.cancel_scan_action, width=8, state='disabled')
         self.cancel_btn.pack(side=tk.LEFT, padx=2)
 
-        ttk.Button(action_frame, text="🔄 Refresh",
+        ttk.Button(action_frame, text="Refresh",
                   command=self.refresh_scan, width=8).pack(side=tk.LEFT, padx=2)
 
-        ttk.Button(action_frame, text="🧹 Clear Cache",
+        ttk.Button(action_frame, text="Clear Cache",
                   command=self.clear_cache, width=12).pack(side=tk.LEFT, padx=2)
 
-        ttk.Button(action_frame, text="⚙️ Settings",
+        ttk.Button(action_frame, text="Settings",
                   command=self.show_settings, width=10).pack(side=tk.LEFT, padx=2)
 
-        ttk.Button(action_frame, text="📁 Explorer",
+        ttk.Button(action_frame, text="Explorer",
                   command=self.open_in_explorer, width=10).pack(side=tk.LEFT, padx=2)
 
-        ttk.Button(action_frame, text="📊 Export",
+        ttk.Button(action_frame, text="Export",
                   command=self.export_report, width=8).pack(side=tk.LEFT, padx=2)
         
         # Right side info
@@ -303,19 +303,19 @@ class StorageManager:
         action_frame = ttk.Frame(parent)
         action_frame.pack(fill=tk.X, pady=(10, 0))
         
-        ttk.Button(action_frame, text="🔺 Go Up", 
+        ttk.Button(action_frame, text="Go Up",
                   command=self.navigate_up, width=15).pack(pady=2, fill=tk.X)
-        
-        ttk.Button(action_frame, text="📂 Open Folder", 
+
+        ttk.Button(action_frame, text="Open Folder",
                   command=self.open_selected_folder, width=15).pack(pady=2, fill=tk.X)
-        
-        ttk.Button(action_frame, text="➡️ Navigate To", 
+
+        ttk.Button(action_frame, text="Navigate To",
                   command=self.navigate_to_selected, width=15).pack(pady=2, fill=tk.X)
-        
-        ttk.Button(action_frame, text="🗑️ Delete", 
+
+        ttk.Button(action_frame, text="Delete",
                   command=self.delete_selected, width=15).pack(pady=2, fill=tk.X)
-        
-        ttk.Button(action_frame, text="ℹ️ Properties", 
+
+        ttk.Button(action_frame, text="Properties",
                   command=self.show_properties, width=15).pack(pady=2, fill=tk.X)
         
     def create_status_bar(self, parent):
@@ -793,7 +793,7 @@ class StorageManager:
             return folder_info
 
         except (PermissionError, OSError):
-            return None
+            return {}
     
     def clear_tree(self):
         """Clear tree view"""
@@ -820,7 +820,7 @@ class StorageManager:
             files_mb = round(files_size / (1024**2), 1)
 
             # Insert virtual entry with special styling
-            self.tree.insert('', 0, text='📄 (Files in this folder)',
+            self.tree.insert('', 0, text='[Files in this folder]',
                            values=(files_gb, files_mb, '-', '-', path),
                            tags=('files_entry',))
 
