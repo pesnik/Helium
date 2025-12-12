@@ -10,6 +10,10 @@ echo ========================================
 echo Helium v2.1 - PyInstaller Build
 echo ========================================
 echo.
+echo NOTE: If build fails with "Access Denied" error:
+echo   - Run as Administrator, OR
+echo   - Add antivirus exception for this folder
+echo.
 
 REM Check if Python is installed
 python --version >nul 2>&1
@@ -77,14 +81,26 @@ if exist "Helium.spec" (
     %PYINSTALLER_CMD% --clean --noconfirm Helium.spec
 ) else (
     echo Using default PyInstaller settings...
-    echo NOTE: Version metadata will be added by rcedit after build
-    echo.
-    %PYINSTALLER_CMD% --onefile --windowed ^
-        --name "Helium" ^
-        --noconsole ^
-        --clean ^
-        --noconfirm ^
-        app.py
+
+    REM Try with version file if it exists
+    if exist "version_info.txt" (
+        echo Including version metadata from version_info.txt
+        %PYINSTALLER_CMD% --onefile --windowed ^
+            --name "Helium" ^
+            --noconsole ^
+            --clean ^
+            --noconfirm ^
+            --version-file "version_info.txt" ^
+            app.py
+    ) else (
+        echo Building without version metadata
+        %PYINSTALLER_CMD% --onefile --windowed ^
+            --name "Helium" ^
+            --noconsole ^
+            --clean ^
+            --noconfirm ^
+            app.py
+    )
 )
 
 if errorlevel 1 (
@@ -98,16 +114,6 @@ echo Verifying build...
 if exist "dist\Helium.exe" (
     echo Build verification successful!
     for %%I in ("dist\Helium.exe") do echo Executable size: %%~zI bytes
-
-    echo.
-    echo [Bonus] Enhancing executable with additional metadata...
-    call tools\enhance_executable.bat --silent
-
-    if errorlevel 1 (
-        echo Note: Could not add extra metadata, but build is complete.
-    ) else (
-        echo Additional metadata added successfully!
-    )
 ) else (
     echo WARNING: Helium.exe not found in dist folder!
 )
@@ -118,10 +124,6 @@ echo BUILD COMPLETED SUCCESSFULLY!
 echo ========================================
 echo.
 echo The executable is located at: dist\Helium.exe
-echo.
-echo Metadata included:
-echo   - Version info (from version_info.txt)
-echo   - Enhanced metadata (from rcedit)
 echo.
 echo You can now distribute the entire 'dist' folder
 echo as a portable application.
