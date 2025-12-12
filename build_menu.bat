@@ -20,8 +20,8 @@ echo  3. Build MSIX Package (Windows Store format)
 echo.
 echo  DISTRIBUTION OPTIONS:
 echo  --------------------
-echo  4. Create Windows Installer (Inno Setup)
-echo  5. Enhance Executable (add metadata)
+echo  4. Create Portable ZIP (recommended - no download warnings)
+echo  5. Create Windows Installer (Inno Setup)
 echo.
 echo  CERTIFICATE OPTIONS:
 echo  -------------------
@@ -44,7 +44,7 @@ if "%CHOICE%"=="1" goto BUILD_PYINSTALLER
 if "%CHOICE%"=="2" goto BUILD_NUITKA
 if "%CHOICE%"=="3" goto BUILD_MSIX
 if "%CHOICE%"=="4" goto BUILD_INSTALLER
-if "%CHOICE%"=="5" goto ENHANCE_EXE
+if "%CHOICE%"=="5" goto BUILD_INSTALLER_INNO
 if "%CHOICE%"=="6" goto SETUP_CERT
 if "%CHOICE%"=="7" goto CREATE_TEST_CERT
 if "%CHOICE%"=="8" goto VIEW_OPTIONS
@@ -78,15 +78,15 @@ goto MENU
 
 :BUILD_INSTALLER
 echo.
-echo Creating Windows Installer...
-call tools\build_installer.bat
+echo Creating Portable ZIP...
+call tools\create_portable_zip.bat
 pause
 goto MENU
 
-:ENHANCE_EXE
+:BUILD_INSTALLER_INNO
 echo.
-echo Enhancing Executable...
-call tools\enhance_executable.bat
+echo Creating Windows Installer...
+call tools\build_installer.bat
 pause
 goto MENU
 
