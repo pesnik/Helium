@@ -5,3 +5,15 @@ __pycache__
 
 app.build
 app.dist
+
+# Certificate files - NEVER commit these!
+*.pfx
+*.p12
+*.pem
+*.key
+*.cer
+HeliumCodeSign.*
+
+# MSIX build artifacts
+msix_package/
+*.msix

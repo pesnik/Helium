@@ -19,7 +19,17 @@ uv pip install nuitka ordered-set zstandard
 
 echo.
 echo Building with Nuitka (this takes longer but produces better exe)...
-uv run nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=tk-inter --output-filename=Helium.exe app.py
+uv run nuitka --standalone --onefile ^
+    --windows-console-mode=disable ^
+    --enable-plugin=tk-inter ^
+    --output-filename=Helium.exe ^
+    --company-name="Your Company Name" ^
+    --product-name="Helium Storage Manager" ^
+    --file-version="2.1.0.0" ^
+    --product-version="2.1.0.0" ^
+    --file-description="Helium Storage Manager" ^
+    --copyright="Copyright (c) 2025" ^
+    app.py
 
 if exist "Helium.exe" (
     echo.

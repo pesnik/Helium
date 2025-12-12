@@ -59,6 +59,7 @@ if exist "Helium.spec" (
         --noconsole ^
         --clean ^
         --noconfirm ^
+        --version-file "version_info.txt" ^
         app.py
 )
 
