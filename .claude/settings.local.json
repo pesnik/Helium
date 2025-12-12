@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile:*)",
+      "Bash(git add:*)",
+      "Bash(git filter-branch:*)",
+      "Bash(git commit:*)",
+      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch:*)",
+      "Bash(git for-each-ref:*)",
+      "Bash(xargs -r -n 1 git update-ref -d)",
+      "Bash(git reflog:*)",
+      "Bash(git gc:*)",
+      "Bash(mklink /D \"D:\\Shared\\Helium\" \"d:\\Helium\")",
+      "Bash(cmd /c 'mklink /D \"\"D:\\Shared\\Helium\"\" \"\"d:\\Helium\"\"')"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

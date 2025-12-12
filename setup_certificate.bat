@@ -13,16 +13,34 @@ echo.
 REM Check if OpenSSL is available (comes with Git for Windows)
 where openssl >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: OpenSSL not found!
+    echo WARNING: OpenSSL not in PATH!
     echo.
-    echo OpenSSL is required to convert PEM to PFX format.
-    echo.
-    echo Install one of:
-    echo   1. Git for Windows ^(includes OpenSSL^): https://git-scm.com/
-    echo   2. OpenSSL for Windows: https://slproweb.com/products/Win32OpenSSL.html
-    echo.
-    pause
-    exit /b 1
+    echo Attempting to use Git's OpenSSL...
+
+    REM Try common Git installation paths
+    set "OPENSSL_PATH="
+    if exist "C:\Program Files\Git\usr\bin\openssl.exe" set "OPENSSL_PATH=C:\Program Files\Git\usr\bin\openssl.exe"
+    if exist "C:\Program Files\Git\mingw64\bin\openssl.exe" set "OPENSSL_PATH=C:\Program Files\Git\mingw64\bin\openssl.exe"
+    if exist "%LOCALAPPDATA%\Programs\Git\usr\bin\openssl.exe" set "OPENSSL_PATH=%LOCALAPPDATA%\Programs\Git\usr\bin\openssl.exe"
+    if exist "%LOCALAPPDATA%\Programs\Git\mingw64\bin\openssl.exe" set "OPENSSL_PATH=%LOCALAPPDATA%\Programs\Git\mingw64\bin\openssl.exe"
+
+    if "!OPENSSL_PATH!"=="" (
+        echo ERROR: OpenSSL not found!
+        echo.
+        echo OpenSSL is required to convert PEM to PFX format.
+        echo.
+        echo Install one of:
+        echo   1. Git for Windows ^(includes OpenSSL^): https://git-scm.com/
+        echo   2. OpenSSL for Windows: https://slproweb.com/products/Win32OpenSSL.html
+        echo.
+        pause
+        exit /b 1
+    )
+
+    echo Found OpenSSL at: !OPENSSL_PATH!
+    set "OPENSSL_CMD=!OPENSSL_PATH!"
+) else (
+    set "OPENSSL_CMD=openssl"
 )
 
 REM Look for .pem files in root directory
@@ -113,7 +131,7 @@ echo Converting PEM to PFX format...
 echo.
 
 REM Convert PEM to PFX using OpenSSL
-openssl pkcs12 -export -out HeliumCodeSign.pfx -inkey "%KEY_FILE%" -in "%PEM_FILE%" -passout pass:%PFX_PASSWORD%
+"%OPENSSL_CMD%" pkcs12 -export -out HeliumCodeSign.pfx -inkey "%KEY_FILE%" -in "%PEM_FILE%" -passout pass:%PFX_PASSWORD%
 
 if errorlevel 1 (
     echo.
