@@ -76,6 +76,10 @@ echo ========================================
 echo.
 echo Metadata added to dist\Helium.exe
 echo.
+
+REM Only show detailed info and pause if run directly (not from build script)
+if "%1"=="--silent" goto END
+
 echo This helps reduce SmartScreen warnings by:
 echo   - Adding professional version info
 echo   - Showing company information
@@ -93,3 +97,5 @@ echo but reduces their severity. For zero warnings,
 echo you need a code signing certificate.
 echo.
 pause
+
+:END

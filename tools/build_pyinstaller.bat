@@ -100,7 +100,7 @@ if exist "dist\Helium.exe" (
 
     echo.
     echo [Bonus] Enhancing executable with additional metadata...
-    call tools\enhance_executable.bat >nul 2>&1
+    call tools\enhance_executable.bat --silent
 
     if errorlevel 1 (
         echo Note: Could not add extra metadata, but build is complete.
