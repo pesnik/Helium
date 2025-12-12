@@ -28,6 +28,37 @@ REM Install required packages
 echo [2/4] Installing PyInstaller...
 pip uninstall typing -y >nul 2>&1
 pip install pyinstaller
+
+if errorlevel 1 (
+    echo.
+    echo ERROR: Failed to install PyInstaller!
+    echo.
+    echo Please try manually:
+    echo   pip install pyinstaller
+    echo.
+    pause
+    exit /b 1
+)
+
+REM Verify PyInstaller is installed
+where pyinstaller >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo ERROR: PyInstaller not found in PATH after installation!
+    echo.
+    echo This can happen if Python Scripts folder is not in PATH.
+    echo.
+    echo Try adding this to your PATH:
+    python -c "import os, sys; print(os.path.join(sys.prefix, 'Scripts'))"
+    echo.
+    echo Or try running:
+    echo   python -m PyInstaller
+    echo.
+    pause
+    exit /b 1
+)
+
+echo PyInstaller installed successfully.
 echo.
 
 REM Clean previous build
@@ -45,6 +76,14 @@ if exist "build" (
 echo Previous build files cleaned.
 echo.
 
+REM Determine PyInstaller command
+set "PYINSTALLER_CMD=pyinstaller"
+where pyinstaller >nul 2>&1
+if errorlevel 1 (
+    echo PyInstaller not in PATH, using python -m PyInstaller instead...
+    set "PYINSTALLER_CMD=python -m PyInstaller"
+)
+
 REM Build the executable
 echo [4/4] Building Helium executable...
 echo This may take a few minutes...
@@ -53,10 +92,10 @@ echo.
 REM Check if custom spec file exists, otherwise use default build
 if exist "Helium.spec" (
     echo Using custom spec file: Helium.spec
-    pyinstaller --clean --noconfirm Helium.spec
+    %PYINSTALLER_CMD% --clean --noconfirm Helium.spec
 ) else (
     echo Using default PyInstaller settings...
-    pyinstaller --onefile --windowed ^
+    %PYINSTALLER_CMD% --onefile --windowed ^
         --name "Helium" ^
         --noconsole ^
         --clean ^
