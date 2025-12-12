@@ -4,6 +4,9 @@ REM Enhance Executable with Reputation Signals
 REM No certificate required
 REM ============================================
 
+REM Change to root directory if called from tools
+cd /d "%~dp0\.."
+
 echo.
 echo ========================================
 echo Helium - Executable Enhancer

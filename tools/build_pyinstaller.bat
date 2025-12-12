@@ -76,6 +76,16 @@ echo Verifying build...
 if exist "dist\Helium.exe" (
     echo Build verification successful!
     for %%I in ("dist\Helium.exe") do echo Executable size: %%~zI bytes
+
+    echo.
+    echo [Bonus] Enhancing executable with additional metadata...
+    call tools\enhance_executable.bat >nul 2>&1
+
+    if errorlevel 1 (
+        echo Note: Could not add extra metadata, but build is complete.
+    ) else (
+        echo Additional metadata added successfully!
+    )
 ) else (
     echo WARNING: Helium.exe not found in dist folder!
 )
@@ -86,6 +96,10 @@ echo BUILD COMPLETED SUCCESSFULLY!
 echo ========================================
 echo.
 echo The executable is located at: dist\Helium.exe
+echo.
+echo Metadata included:
+echo   - Version info (from version_info.txt)
+echo   - Enhanced metadata (from rcedit)
 echo.
 echo You can now distribute the entire 'dist' folder
 echo as a portable application.
