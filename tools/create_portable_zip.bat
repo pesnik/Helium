@@ -41,11 +41,20 @@ echo   1. Extract this folder anywhere on your computer
 echo   2. Double-click Helium.exe to run
 echo   3. No installation required!
 echo.
-echo FIRST RUN:
-echo   If Windows shows a security warning:
-echo   - Click "More info"
-echo   - Click "Run anyway"
-echo   This only happens on first run.
+echo FIRST RUN - WINDOWS SECURITY WARNING:
+echo   Windows may show "Microsoft Defender SmartScreen" warning.
+echo   This is normal for new software without a code signing certificate.
+echo.
+echo   TO RUN THE APP:
+echo   1. Click "More info" link
+echo   2. Click "Run anyway" button
+echo   3. This only happens ONCE - future runs work normally
+echo.
+echo   WHY THIS HAPPENS:
+echo   - Helium is safe but not yet code-signed
+echo   - We're working on getting a certificate
+echo   - Thousands of legitimate apps show this warning
+echo   - Your antivirus still scans the file for safety
 echo.
 echo UNINSTALLATION:
 echo   Simply delete this folder - no traces left behind.
