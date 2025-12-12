@@ -77,12 +77,13 @@ if exist "Helium.spec" (
     %PYINSTALLER_CMD% --clean --noconfirm Helium.spec
 ) else (
     echo Using default PyInstaller settings...
+    echo NOTE: Version metadata will be added by rcedit after build
+    echo.
     %PYINSTALLER_CMD% --onefile --windowed ^
         --name "Helium" ^
         --noconsole ^
         --clean ^
         --noconfirm ^
-        --version-file "version_info.txt" ^
         app.py
 )
 
