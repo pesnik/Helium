@@ -40,24 +40,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Verify PyInstaller is installed
-where pyinstaller >nul 2>&1
-if errorlevel 1 (
-    echo.
-    echo ERROR: PyInstaller not found in PATH after installation!
-    echo.
-    echo This can happen if Python Scripts folder is not in PATH.
-    echo.
-    echo Try adding this to your PATH:
-    python -c "import os, sys; print(os.path.join(sys.prefix, 'Scripts'))"
-    echo.
-    echo Or try running:
-    echo   python -m PyInstaller
-    echo.
-    pause
-    exit /b 1
-)
-
 echo PyInstaller installed successfully.
 echo.
 
