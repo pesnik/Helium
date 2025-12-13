@@ -2,9 +2,15 @@ VSVersionInfo(
   ffi=FixedFileInfo(
     filevers=(2, 1, 0, 0),
     prodvers=(2, 1, 0, 0),
-    mask=0x3f,
-    flags=0x0,
+    
+    # 0x3f (VS_FFI_FILEFLAGSMASK) is standard
+    mask=0x3f, 
+    # Includes PrivateBuild (0x00000008) and SpecialBuild (0x00000020) flags
+    flags=0x28, 
+    
+    # 0x40004 (VOS_NT_WINDOWS32) is standard for Windows executables
     OS=0x40004,
+    # 0x1 (VFT_APP) for application
     fileType=0x1,
     subtype=0x0,
     date=(0, 0)
@@ -13,17 +19,30 @@ VSVersionInfo(
     StringFileInfo(
       [
       StringTable(
-        u'040904B0',
-        [StringStruct(u'CompanyName', u'Your Company Name'),
-        StringStruct(u'FileDescription', u'Helium Storage Manager'),
+        # Language/Charset: 0409 (English - United States), 04B0 (Unicode)
+        u'040904B0', 
+        [
+        StringStruct(u'CompanyName', u'AgentsHQ'),
+        StringStruct(u'FileDescription', u'Helium Storage Manager - Data Archival and Retrieval Utility'),
         StringStruct(u'FileVersion', u'2.1.0.0'),
         StringStruct(u'InternalName', u'Helium'),
-        StringStruct(u'LegalCopyright', u'Copyright (c) 2025'),
+        StringStruct(u'LegalCopyright', u'Copyright (c) 2025. All Rights Reserved.'),
         StringStruct(u'OriginalFilename', u'Helium.exe'),
         StringStruct(u'ProductName', u'Helium Storage Manager'),
-        StringStruct(u'ProductVersion', u'2.1.0.0')])
+        StringStruct(u'ProductVersion', u'2.1.0.0'),
+        
+        StringStruct(u'Comments', u'This version includes experimental support for cloud backup.'),
+        StringStruct(u'LegalTrademarks', u'Helium Storage Manager and HSM are registered trademarks.'),
+        
+        StringStruct(u'PrivateBuild', u'Internal Development Build 142. Do Not Distribute.'),
+        StringStruct(u'SpecialBuild', u'Beta Release Candidate 2')
+        ]
+      )
       ]
     ),
-    VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
+    VarFileInfo([
+      # Translation: 1033 (English - United States), 1200 (Unicode)
+      VarStruct(u'Translation', [1033, 1200])
+    ])
   ]
 )
