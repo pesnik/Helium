@@ -123,10 +123,11 @@ export const FileExplorer = () => {
         }),
     ];
 
-    const fetchData = async (path: string) => {
+    const fetchData = async (path: string, forceRefresh: boolean = false) => {
         setState(prev => ({ ...prev, loading: true, error: null }));
         try {
-            const data = await invoke<FileNode>('scan_dir', { path });
+            const command = forceRefresh ? 'refresh_scan' : 'scan_dir';
+            const data = await invoke<FileNode>(command, { path });
             setState(prev => ({ ...prev, loading: false, data, path }));
             setInputPath(path);
         } catch (e: any) {
@@ -202,7 +203,7 @@ export const FileExplorer = () => {
                 <Button icon={<ArrowLeftRegular />} disabled={state.historyIndex <= 0} onClick={handleBack} />
                 <Button icon={<ArrowRightRegular />} disabled={state.historyIndex >= state.history.length - 1} onClick={handleForward} />
                 <Button icon={<ArrowUpRegular />} onClick={handleUp} />
-                <Button icon={<ArrowClockwiseRegular />} onClick={() => fetchData(state.path)} />
+                <Button icon={<ArrowClockwiseRegular />} onClick={() => fetchData(state.path, true)} />
 
                 <div className={styles.pathBar}>
                     <Input

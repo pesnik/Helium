@@ -16,6 +16,8 @@ pub fn run() {
     })
     .invoke_handler(tauri::generate_handler![
         commands::scan_dir,
+        commands::refresh_scan,
+        commands::clear_cache,
         commands::open_in_explorer
     ])
     .run(tauri::generate_context!())
