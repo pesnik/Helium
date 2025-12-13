@@ -35,6 +35,8 @@ import {
     OpenRegular,
     DeleteRegular,
     FolderOpenRegular,
+    HomeRegular,
+    HardDriveRegular,
 } from '@fluentui/react-icons';
 import { invoke } from '@tauri-apps/api/core';
 import { FileNode } from '@/types';
@@ -121,11 +123,21 @@ export const FileExplorer = () => {
             columnId: 'file',
             compare: (a, b) => a.name.localeCompare(b.name),
             renderHeaderCell: () => 'Name',
-            renderCell: (item) => (
-                <TableCellLayout media={item.is_dir ? <FolderRegular /> : <DocumentRegular />}>
-                    {item.name}
-                </TableCellLayout>
-            ),
+            renderCell: (item) => {
+                let Icon = DocumentRegular;
+                if (item.is_dir) {
+                    Icon = FolderRegular;
+                    // Check if it looks like a drive (Windows) or we are at root
+                    if (item.path.match(/^[a-zA-Z]:\\$/) || (item.path === '/' && item.name !== 'Root /')) {
+                        Icon = HardDriveRegular;
+                    }
+                }
+                return (
+                    <TableCellLayout media={<Icon />}>
+                        {item.name}
+                    </TableCellLayout>
+                );
+            },
         }),
         createTableColumn({
             columnId: 'size',
@@ -150,6 +162,29 @@ export const FileExplorer = () => {
     const fetchData = async (path: string, forceRefresh: boolean = false) => {
         setState(prev => ({ ...prev, loading: true, error: null }));
         try {
+            if (path === '') {
+                // Fetch Drives
+                const drives = await invoke<FileNode[]>('get_drives');
+                setState(prev => ({
+                    ...prev,
+                    loading: false,
+                    // Construct a fake root node to hold drives
+                    data: {
+                        name: 'This PC',
+                        path: '',
+                        size: 0,
+                        is_dir: true,
+                        children: drives,
+                        last_modified: 0,
+                        file_count: drives.length
+                    },
+                    path: ''
+                }));
+                setInputPath('');
+                setSelectedItems(new Set());
+                return;
+            }
+
             const command = forceRefresh ? 'refresh_scan' : 'scan_dir';
             const data = await invoke<FileNode>(command, { path });
             setState(prev => ({ ...prev, loading: false, data, path }));
@@ -161,7 +196,7 @@ export const FileExplorer = () => {
     };
 
     React.useEffect(() => {
-        const initialPath = '/';
+        const initialPath = ''; // Start at Home (Drives)
         setState(prev => ({
             ...prev,
             history: [initialPath],

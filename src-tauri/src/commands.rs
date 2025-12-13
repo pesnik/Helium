@@ -162,3 +162,77 @@ pub fn delete_item(path: String) -> Result<(), String> {
     
     Ok(())
 }
+
+#[command]
+pub fn get_drives() -> Vec<FileNode> {
+    let mut drives = Vec::new();
+
+    #[cfg(target_os = "windows")]
+    {
+        // Simple iteration from A to Z to find mounts
+        for i in b'A'..=b'Z' {
+            let drive_letter = i as char;
+            let path = format!("{}:\\", drive_letter);
+            if Path::new(&path).exists() {
+                drives.push(FileNode {
+                    name: format!("Local Disk ({}:)", drive_letter),
+                    path,
+                    size: 0, // Need meaningful size? Scan would be slow. 0 for now.
+                    is_dir: true,
+                    children: None,
+                    last_modified: 0,
+                    file_count: 0,
+                });
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // Root
+        drives.push(FileNode {
+            name: "Macintosh HD".to_string(), // Typical name, hardcoded or just Root
+            path: "/".to_string(),
+            size: 0,
+            is_dir: true,
+            children: None,
+            last_modified: 0,
+            file_count: 0
+        });
+
+        // External Volumes
+        if let Ok(entries) = std::fs::read_dir("/Volumes") {
+            for entry in entries.flatten() {
+                 let path = entry.path();
+                 let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                 // Skip some typical hidden ones?
+                 drives.push(FileNode {
+                    name,
+                    path: path.to_string_lossy().to_string(),
+                    size: 0,
+                    is_dir: true,
+                    children: None,
+                    last_modified: 0,
+                    file_count: 0
+                });
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Just Root for now
+        drives.push(FileNode {
+            name: "Root /".to_string(),
+            path: "/".to_string(),
+            size: 0,
+            is_dir: true,
+            children: None,
+            last_modified: 0,
+            file_count: 0
+        });
+        // Could check /media or /mnt
+    }
+
+    drives
+}

@@ -19,7 +19,8 @@ pub fn run() {
         commands::refresh_scan,
         commands::clear_cache,
         commands::open_in_explorer,
-        commands::delete_item
+        commands::delete_item,
+        commands::get_drives
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
