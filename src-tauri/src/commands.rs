@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{SystemTime, Duration};
 use lazy_static::lazy_static;
+use std::path::{Path, PathBuf};
 
 struct CacheEntry {
     node: FileNode,
@@ -14,8 +15,35 @@ lazy_static! {
     static ref SCAN_CACHE: Mutex<HashMap<String, CacheEntry>> = Mutex::new(HashMap::new());
 }
 
-// 1 hour cache TTL, maybe configurable?
 const CACHE_TTL: u64 = 60 * 60; 
+
+fn normalize_path(path: &str) -> String {
+    // Basic normalization: use forward slashes for internal key comparison if needed?
+    // Actually, OS specifics matter.
+    // On Windows C:\Users and C:/Users should be same.
+    // Let's use std::path::Path to canonicalize? Canonicalize resolves symlinks which might be slow or unwanted.
+    // Let's just standardise separators.
+    let p = Path::new(path);
+    // Use the string representation provided by OS but maybe trim usage of mixed slashes?
+    // For cache keys, exact string match is used.
+    // If the frontend sends standardized paths, we are good.
+    // The previous app used `str(Path(p))` which standardizes to OS native.
+    // Let's rely on that or just use the input string if we trust frontend.
+    // But frontend sends what it gets from backend.
+    
+    // Issue: "C:\" vs "C:" ?
+    // Let's strip trailing slash unless root.
+    let mut s = path.to_string();
+    if s.len() > 1 && (s.ends_with('/') || s.ends_with('\\')) {
+         // check if it's root (e.g. C:\ or /)
+         // On windows C:\ is root.
+         let is_root = s.len() == 3 && s.chars().nth(1) == Some(':');
+         if !is_root && s != "/" {
+             s.pop();
+         }
+    }
+    s
+}
 
 #[command]
 pub async fn scan_dir(path: String) -> Result<FileNode, String> {
@@ -28,10 +56,13 @@ pub async fn refresh_scan(path: String) -> Result<FileNode, String> {
 }
 
 async fn scan_dir_internal(path: String, force_refresh: bool) -> Result<FileNode, String> {
-    // Check cache first
+    // Normalize path for cache key
+    let key = normalize_path(&path);
+
+    // Check cache
     if !force_refresh {
         let cache = SCAN_CACHE.lock().map_err(|e| e.to_string())?;
-        if let Some(entry) = cache.get(&path) {
+        if let Some(entry) = cache.get(&key) {
             if let Ok(elapsed) = entry.timestamp.elapsed() {
                 if elapsed.as_secs() < CACHE_TTL {
                     return Ok(entry.node.clone());
@@ -40,7 +71,6 @@ async fn scan_dir_internal(path: String, force_refresh: bool) -> Result<FileNode
         }
     }
 
-    // Run in blocking thread to avoid blocking the async runtime
     let path_clone = path.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         scan_directory(&path_clone)
@@ -48,10 +78,32 @@ async fn scan_dir_internal(path: String, force_refresh: bool) -> Result<FileNode
 
     // Update cache
     let mut cache = SCAN_CACHE.lock().map_err(|e| e.to_string())?;
-    cache.insert(path, CacheEntry {
+    let now = SystemTime::now();
+    
+    // Cache the main result
+    cache.insert(key.clone(), CacheEntry {
         node: result.clone(),
-        timestamp: SystemTime::now(),
+        timestamp: now,
     });
+    
+    // CACHE LOOKAHEAD: Cache the children nodes too!
+    if let Some(children) = &result.children {
+        for child in children {
+            // We need to clone, but we should probably strip *their* children if we went deeper?
+            // Currently scanner goes 2 levels deep. 
+            // Level 0: Root (A)
+            // Level 1: Child (B) -> Has children details (D, E) populated.
+            // Level 2: Grandchild (D) -> children=None.
+            
+            // So 'child' here is 'B'. It has .children populated.
+            // We can cache 'B' directly!
+            let child_key = normalize_path(&child.path);
+            cache.insert(child_key, CacheEntry {
+                node: child.clone(),
+                timestamp: now,
+            });
+        }
+    }
 
     Ok(result)
 }
