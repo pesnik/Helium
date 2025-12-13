@@ -2,9 +2,9 @@ use tauri::command;
 use crate::scanner::{scan_directory, FileNode};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::{SystemTime, Duration};
+use std::time::SystemTime;
 use lazy_static::lazy_static;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 struct CacheEntry {
     node: FileNode,
@@ -23,7 +23,7 @@ fn normalize_path(path: &str) -> String {
     // On Windows C:\Users and C:/Users should be same.
     // Let's use std::path::Path to canonicalize? Canonicalize resolves symlinks which might be slow or unwanted.
     // Let's just standardise separators.
-    let p = Path::new(path);
+    
     // Use the string representation provided by OS but maybe trim usage of mixed slashes?
     // For cache keys, exact string match is used.
     // If the frontend sends standardized paths, we are good.

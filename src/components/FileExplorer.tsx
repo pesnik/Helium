@@ -330,7 +330,21 @@ export const FileExplorer = () => {
                 <Menu
                     open={contextMenuOpen}
                     onOpenChange={(e, data) => setContextMenuOpen(data.open)}
-                    positioning={{ target: { x: contextMenuLocation.x, y: contextMenuLocation.y } }}
+                    positioning={{
+                        target: {
+                            getBoundingClientRect: () => ({
+                                top: contextMenuLocation.y,
+                                left: contextMenuLocation.x,
+                                right: contextMenuLocation.x,
+                                bottom: contextMenuLocation.y,
+                                width: 0,
+                                height: 0,
+                                x: contextMenuLocation.x,
+                                y: contextMenuLocation.y,
+                                toJSON: () => { },
+                            }),
+                        },
+                    }}
                 >
                     <MenuPopover>
                         <MenuList>
